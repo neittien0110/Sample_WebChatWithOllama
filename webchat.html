@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Web Chat - Streaming</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .chat-container {
+            max-width: 900px;
+            height: 95vh;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .message-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        .message {
+            padding: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .user-message {
+            background-color: #f9fafb;
+        }
+        .model-message {
+            background-color: #ffffff;
+        }
+        .model-icon {
+            color: #3b82f6; /* Blue 500 */
+        }
+        .user-icon {
+            color: #10b981; /* Emerald 500 */
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" class="chat-container rounded-xl mt-3 overflow-hidden">
+    <!-- Header -->
+    <header class="bg-indigo-700 text-white p-4 shadow-md flex justify-between items-center">
+        <h1 class="text-xl font-bold">Ollama Web Chat</h1>
+        <div id="config-info" class="text-sm font-light">
+            Model: <span id="model-name">...</span>
+        </div>
+    </header>
+
+    <!-- Message Area -->
+    <div id="message-area" class="message-area p-4 space-y-4">
+        <!-- Messages will be appended here -->
+        <div class="message model-message rounded-lg shadow-sm">
+            <p class="text-gray-800"><span class="font-bold model-icon">🤖</span> Chào mừng! Vui lòng nhập câu hỏi của bạn. Đảm bảo Ollama server đang chạy.</p>
+        </div>
+    </div>
+
+    <!-- Input Form -->
+    <div class="p-4 bg-gray-100 border-t border-gray-200">
+        <form id="chat-form" class="flex space-x-3">
+            <input type="text" id="user-input" placeholder="Nhập câu hỏi của bạn..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500" required>
+            <button type="submit" id="send-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition duration-150 ease-in-out disabled:bg-indigo-300">
+                Gửi
+            </button>
+        </form>
+        <div id="status-message" class="mt-2 text-sm text-center text-gray-500"></div>
+    </div>
+</div>
+
+<script>
+    // --- CẤU HÌNH API ---
+    // Vì không có file .env trong trình duyệt, chúng ta đặt cấu hình ở đây.
+    // Đảm bảo Ollama server có thể truy cập từ trình duyệt này (thường là http://localhost:11434).
+    const OLLAMA_HOST = "http://localhost:11434"; 
+    const DEFAULT_MODEL = "deepseek-r1:1.5b";           // Cần thay thế bằng model thực tế sử dụng nếu cần
+    const API_URL = `${OLLAMA_HOST}/api/generate`;
+
+    // Cập nhật thông tin cấu hình trên UI
+    document.getElementById('model-name').textContent = DEFAULT_MODEL;
+
+    // --- DOM Elements ---
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const messageArea = document.getElementById('message-area');
+    const sendBtn = document.getElementById('send-btn');
+    const statusMessage = document.getElementById('status-message');
+
+    let controller = null; // Dùng để hủy yêu cầu (Ctrl+C tương đương)
+    
+    // --- HÀM TIỆN ÍCH UI ---
+
+    // Tự động cuộn xuống cuối khu vực chat
+    function scrollToBottom() {
+        messageArea.scrollTop = messageArea.scrollHeight;
+    }
+
+    // Thêm tin nhắn của người dùng vào giao diện
+    function appendUserMessage(text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message user-message rounded-lg shadow-sm';
+        msgDiv.innerHTML = `<p class="text-gray-800"><span class="font-bold user-icon">👤</span> ${text}</p>`;
+        messageArea.appendChild(msgDiv);
+        scrollToBottom();
+    }
+
+    // Thêm và trả về phần tử tin nhắn của Model (ban đầu trống)
+    function createModelMessage() {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message model-message rounded-lg shadow-sm';
+        msgDiv.innerHTML = `<p class="text-gray-800"><span class="font-bold model-icon">🤖</span> <span class="response-text"></span></p>`;
+        messageArea.appendChild(msgDiv);
+        scrollToBottom();
+        return msgDiv.querySelector('.response-text');
+    }
+
+    // Cập nhật trạng thái và nút Gửi
+    function setProcessingState(isProcessing, message = '') {
+        sendBtn.disabled = isProcessing;
+        userInput.disabled = isProcessing;
+        statusMessage.textContent = message;
+    }
+
+    // --- HÀM XỬ LÝ STREAMING ---
+
+    async function streamResponse(prompt) {
+        // Tạo tin nhắn Model trống và lấy reference đến element chứa text
+        const responseTextElement = createModelMessage();
+        setProcessingState(true, 'Đang tạo phản hồi...');
+        
+        // Tạo AbortController để hủy yêu cầu
+        controller = new AbortController();
+        const signal = controller.signal;
+
+        try {
+            const payload = {
+                model: DEFAULT_MODEL,
+                prompt: prompt,
+                stream: true // Kích hoạt streaming
+            };
+
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: signal // Gắn signal để có thể hủy
+            });
+
+            if (!response.ok) {
+                // Đọc lỗi từ phản hồi nếu có
+                const errorText = await response.text();
+                responseTextElement.textContent = `[LỖI HTTP] ${response.status}: ${errorText.substring(0, 100)}...`;
+                setProcessingState(false, 'Đã xảy ra lỗi.');
+                return;
+            }
+
+            // Lấy reader để đọc luồng
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let responseText = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+                
+                // Decode và xử lý từng chunk dữ liệu
+                const chunk = decoder.decode(value, { stream: true });
+                
+                // Ollama gửi các đối tượng JSON trên mỗi dòng, được phân tách bằng '\n'
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+
+                    try {
+                        const data = JSON.parse(line);
+                        if (data.response) {
+                            responseText += data.response;
+                            // Cập nhật giao diện với text mới nhất
+                            responseTextElement.textContent = responseText;
+                            scrollToBottom();
+                        }
+                        if (data.done) {
+                            reader.releaseLock();
+                            return; // Dừng vòng lặp sau khi nhận done: true
+                        }
+                    } catch (e) {
+                        console.error("Lỗi phân tích JSON trong stream:", e, line);
+                        // Bỏ qua dòng lỗi và tiếp tục
+                    }
+                }
+            }
+            
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                responseTextElement.textContent += "\n[Đã HỦY] Yêu cầu đã bị hủy bởi người dùng.";
+                console.log("Yêu cầu bị hủy.");
+            } else {
+                responseTextElement.textContent = `[LỖI KẾT NỐI] Không thể kết nối tới Ollama. Lỗi: ${error.message}`;
+                console.error("Lỗi Fetch:", error);
+            }
+        } finally {
+            setProcessingState(false, 'Hoàn thành.');
+            controller = null; // Đặt lại controller
+        }
+    }
+
+    // --- XỬ LÝ SỰ KIỆN ---
+
+    // Xử lý sự kiện gửi form
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const prompt = userInput.value.trim();
+        if (prompt === "") return;
+
+        // Xử lý lệnh thoát tương đương
+        if (prompt.toLowerCase() === 'exit' || prompt.toLowerCase() === 'quit') {
+            appendUserMessage(prompt);
+            const msgDiv = createModelMessage();
+            msgDiv.textContent = "Đã thoát phiên trò chuyện. Vui lòng làm mới trang để bắt đầu lại.";
+            userInput.value = '';
+            setProcessingState(true); // Vô hiệu hóa input sau khi thoát
+            return;
+        }
+
+        appendUserMessage(prompt);
+        userInput.value = '';
+        streamResponse(prompt);
+    });
+
+    // Lắng nghe sự kiện Ctrl+C (KeyboardInterrupt) để hủy yêu cầu
+    document.addEventListener('keydown', (e) => {
+        // Kiểm tra Ctrl+C (hoặc Cmd+C trên Mac)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            e.preventDefault(); // Ngăn chặn hành vi mặc định của trình duyệt
+            if (controller) {
+                controller.abort(); // Hủy yêu cầu đang chờ xử lý
+                setProcessingState(false, 'Yêu cầu đã bị hủy (Ctrl+C).');
+            } else {
+                // Xử lý nếu người dùng nhấn Ctrl+C khi không có yêu cầu nào đang chạy
+                const msgDiv = createModelMessage();
+                msgDiv.textContent = "[CẢNH BÁO] Không có yêu cầu nào đang chạy để hủy.";
+                setTimeout(() => {
+                    msgDiv.remove();
+                }, 3000);
+            }
+        }
+    });
+
+</script>
+
+</body>
+</html>
