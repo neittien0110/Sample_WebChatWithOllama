@@ -49,8 +49,10 @@
     <!-- Header -->
     <header class="bg-indigo-700 text-white p-4 shadow-md flex justify-between items-center">
         <h1 class="text-xl font-bold">Ollama Web Chat</h1>
-        <div id="config-info" class="text-sm font-light">
-            Model: <span id="model-name">...</span>
+        <!-- Đã thay thế hiển thị tên mô hình tĩnh bằng Dropdown -->
+        <div id="config-info" class="text-sm font-light flex items-center space-x-2">
+            <label for="model-select">Model:</label>
+            <select id="model-select" class="text-gray-800 p-1 rounded text-sm bg-white"></select>
         </div>
     </header>
 
@@ -76,14 +78,16 @@
 
 <script>
     // --- CẤU HÌNH API ---
-    // Vì không có file .env trong trình duyệt, chúng ta đặt cấu hình ở đây.
-    // Đảm bảo Ollama server có thể truy cập từ trình duyệt này (thường là http://localhost:11434).
     const OLLAMA_HOST = "http://localhost:11434"; 
-    const DEFAULT_MODEL = "deepseek-r1:1.5b";           // Cần thay thế bằng model thực tế sử dụng nếu cần
     const API_URL = `${OLLAMA_HOST}/api/generate`;
 
-    // Cập nhật thông tin cấu hình trên UI
-    document.getElementById('model-name').textContent = DEFAULT_MODEL;
+    // Danh sách các mô hình có thể chọn
+    const AVAILABLE_MODELS = [
+        "deepseek-r1:1.5b", // Mô hình cơ sở 
+        "myai", // Mô hình tùy chỉnh của bạn        
+    ];
+    // Tên mô hình mặc định khi tải trang
+    const DEFAULT_MODEL_NAME = "private-llm";
 
     // --- DOM Elements ---
     const chatForm = document.getElementById('chat-form');
@@ -91,10 +95,24 @@
     const messageArea = document.getElementById('message-area');
     const sendBtn = document.getElementById('send-btn');
     const statusMessage = document.getElementById('status-message');
+    const modelSelect = document.getElementById('model-select'); // Lấy element dropdown
 
     let controller = null; // Dùng để hủy yêu cầu (Ctrl+C tương đương)
     
-    // --- HÀM TIỆN ÍCH UI ---
+    // --- HÀM KHỞI TẠO VÀ TIỆN ÍCH UI ---
+
+    // Khởi tạo Dropdown với các mô hình có sẵn
+    function initializeModelSelect() {
+        AVAILABLE_MODELS.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            if (model === DEFAULT_MODEL_NAME) {
+                option.selected = true;
+            }
+            modelSelect.appendChild(option);
+        });
+    }
 
     // Tự động cuộn xuống cuối khu vực chat
     function scrollToBottom() {
@@ -124,12 +142,16 @@
     function setProcessingState(isProcessing, message = '') {
         sendBtn.disabled = isProcessing;
         userInput.disabled = isProcessing;
+        modelSelect.disabled = isProcessing; // Vô hiệu hóa dropdown khi đang xử lý
         statusMessage.textContent = message;
     }
 
     // --- HÀM XỬ LÝ STREAMING ---
 
     async function streamResponse(prompt) {
+        // Lấy mô hình hiện tại được chọn từ dropdown
+        const selectedModel = modelSelect.value;
+        
         // Tạo tin nhắn Model trống và lấy reference đến element chứa text
         const responseTextElement = createModelMessage();
         setProcessingState(true, 'Đang tạo phản hồi...');
@@ -140,7 +162,7 @@
 
         try {
             const payload = {
-                model: DEFAULT_MODEL,
+                model: selectedModel, // Sử dụng model đã chọn
                 prompt: prompt,
                 stream: true // Kích hoạt streaming
             };
@@ -254,6 +276,9 @@
             }
         }
     });
+
+    // Khởi tạo dropdown khi trang tải xong
+    window.onload = initializeModelSelect;
 
 </script>
 

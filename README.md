@@ -1,6 +1,6 @@
 # WEB CHAT với AI tạo bởi Ollama
 
- ứng dụng trò chuyện nền web đơn giản, sử dụng HTML/JavaScript để tương tác trực tiếp với Ollama Server, bao gồm cả tính năng truyền tải dữ liệu theo luồng (streaming).
+ứng dụng trò chuyện nền web đơn giản, sử dụng HTML/JavaScript để tương tác trực tiếp với Ollama Server, bao gồm cả tính năng truyền tải dữ liệu theo luồng (streaming).
 
 ## Mục Tiêu và Chức Năng
 
@@ -9,6 +9,7 @@
 Mục tiêu | Cung cấp giao diện đồ họa (GUI) đơn giản để trò chuyện với các mô hình LLM trên Ollama mà không cần sử dụng giao diện dòng lệnh (CLI).
 Chức năng chính | Streaming: Nhận và hiển thị phản hồi từ mô hình theo thời gian thực (từng ký tự, từng đoạn văn bản) để giảm độ trễ cảm nhận.
 Tính năng bổ sung | Hỗ trợ hủy yêu cầu đang chạy bằng cách nhấn tổ hợp phím Ctrl+C (tương đương với KeyboardInterrupt trong CLI).
+Tính năng bổ sung | Chọn model cơ sở, hoặc model RAG AI với dữ liệu cá nhân
 
 ## Nguyên Lý Vận Hành (Client-side Streaming)
 
